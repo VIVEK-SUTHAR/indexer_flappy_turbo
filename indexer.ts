@@ -1,6 +1,7 @@
 import {
   Connection,
   PublicKey,
+  type Finality,
   type SignaturesForAddressOptions,
 } from "@solana/web3.js";
 import { createClient } from "redis";
@@ -10,17 +11,12 @@ import EventParserHandler from "./event-parser";
 import idl from "./idl.json";
 import type { Idl } from "@project-serum/anchor";
 import client from "./redis";
-import { stringify } from "querystring";
 import { config } from "process";
-
-const redisClient = createClient();
-
-redisClient.on("error", (err) => console.log("Redis Client Error", err));
-await redisClient.connect();
+import { SOLANA_COMMITMENT } from "./constants";
 
 const ProcessedSignatureKey = "processed:signatures";
 
-class SolanaTransactionIndexer {
+class FlappyTurboIndexer {
   private connection: Connection;
   private programAddress: PublicKey;
   private eventParserHandler: EventParserHandler | null = null;
@@ -47,6 +43,7 @@ class SolanaTransactionIndexer {
             limit: limit,
             before: lastProcessedSignature || undefined,
           },
+          SOLANA_COMMITMENT,
         );
 
         if (signatures && signatures.length > 0) {
@@ -66,6 +63,9 @@ class SolanaTransactionIndexer {
             if (!isProcessed) {
               const txn = await this.connection.getTransaction(
                 sigInfo.signature,
+                {
+                  commitment: SOLANA_COMMITMENT,
+                },
               );
               if (!txn) {
                 console.log(
@@ -122,10 +122,10 @@ class SolanaTransactionIndexer {
           options.before = lastProcessedSignature;
           options.until = lastProcessedSignatureFromBackfill;
         }
-
         const newSignatures = await this.connection.getSignaturesForAddress(
           this.programAddress,
           options,
+          SOLANA_COMMITMENT,
         );
 
         if (newSignatures && newSignatures.length > 0) {
@@ -172,7 +172,6 @@ class SolanaTransactionIndexer {
       if (latestSignature)
         this.writeLastProcessedSignatureToConfig(latestSignature);
       console.log("lastProcessedSignature:", lastProcessedSignature);
-
       console.log(
         `Processed ${processed} new txns from ${lastProcessedSignature}`,
       );
@@ -209,14 +208,17 @@ class SolanaTransactionIndexer {
         const processedCount = await this.indexTransactions();
         console.log(`Processed ${processedCount} new transactions`);
 
-        // setInterval(() => {
-        //   const config = JSON.parse(
-        //     fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"),
-        //   );
-        //   if (config && config.lastProcessedSignature) {
-        //     this.startPolling(config.lastProcessedSignature);
-        //   }
-        // }, 5000);
+        setInterval(() => {
+          const configPath = path.join(process.cwd(), "config.json");
+          if (!fs.existsSync(configPath)) {
+            console.log("No configPath return");
+            return;
+          }
+          const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+          if (config && config.lastProcessedSignature) {
+            this.startPolling(config.lastProcessedSignature);
+          }
+        }, 5000);
       } catch (error) {
         console.error("Periodic indexing error:", error);
       }
@@ -226,4 +228,4 @@ class SolanaTransactionIndexer {
   }
 }
 
-export default SolanaTransactionIndexer;
+export default FlappyTurboIndexer;

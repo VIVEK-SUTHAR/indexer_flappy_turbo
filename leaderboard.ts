@@ -4,7 +4,7 @@ export function getLeaderboardKey(contestId: string): string {
   return `leaderboard:${contestId}`;
 }
 
-async function getLeaderboard(contestId: string) {
+export async function getLeaderboard(contestId: string) {
   try {
     const leaderboard = await client.zRangeWithScores(
       getLeaderboardKey(contestId),
